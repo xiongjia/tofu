@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: "1.55.1"
+      - name: Install dprint (same version as local)
+        run: npm install -g dprint@0.57.1
+      # just is the single entrypoint: dprint check + justfile self-format
+      - name: Format checks
+        run: just check
