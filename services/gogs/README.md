@@ -24,8 +24,9 @@ just gogs-up                      # start the container
 
 Open `http://<host>:8550/`.
 
-- **Fresh instance (empty DB)**: an **install wizard** appears once — set Database type **SQLite**, Application URL `http://<host>:8550/`, and create the admin account. It is never shown again.
-- Afterwards: register/sign in users as usual (admin created in the wizard).
+- **First start only**: the **install wizard** appears once — on Gogs 0.14.x it is the only path that creates the DB schema. Keep Database type **SQLite3** and the pre-filled DB path (`/data/gogs/data/gogs.db`); set the admin account and Application URL `http://<host>:8550/`. Completing it writes `INSTALL_LOCK = true` into the data `app.ini`, so it is never shown again.
+- Afterwards sign in as usual (register more users as needed).
+- Verify afterwards with `just gogs-check` (PATH inside `/data`, DB file present, INSTALL_LOCK=true).
 
 Verify clones work:
 
@@ -91,6 +92,7 @@ Rollback: revert the tag in compose + restore a backup if needed.
 ## Troubleshooting
 
 - **`git clone` returns 500 but `curl` to the same URL is 200** — the client is going through a local HTTP proxy (e.g. Privoxy on `127.0.0.1:1095`) that cannot reach the LAN host; the `500 Internal Privoxy Error` comes from the proxy, not Gogs. Bypass: `env -u http_proxy -u https_proxy -u all_proxy git clone …`, or add the host to `no_proxy`.
+- **Users can't log in after `down`/`up`** — the DB was in the container layer: the install wizard rewrites `app.ini` `[database]` and can drop the `/data` PATH, so the SQLite file lived at `/app/gogs/...` and vanished on container recreate. Fix permanently: in `data/gogs/gogs/conf/app.ini` set `[database] TYPE = sqlite3` + `PATH = /data/gogs/data/gogs.db` (drop leftover postgres keys) and add `INSTALL_LOCK = true` under `[security]`; `sudo mkdir -p data/gogs/gogs/data` + `just gogs-chown`; restart; create an admin with `docker compose exec gogs gogs admin create-user --admin --config /data/gogs/conf/app.ini …`. Run `just gogs-check` before/after any wizard, down/up or upgrade.
 - **`git clone` returns 500 right after first start** — the instance is not initialized yet (DB missing, install wizard pending) or the repo/user lives on a different instance. Complete the wizard on this host, then (re)create the repo here.
 - **Container loops with `mkdir: can't create directory '/data/git': Permission denied` (Linux VM)** — the host data dir is owned by the wrong user; the non-root container (UID 1000) cannot create subdirs. Fix with `just gogs-chown` (or `sudo chown -R 1000:1000 data/gogs`), then `just gogs-restart`.
 - **Container refuses to start** — most likely a missing/unsafe `SECRET_KEY` or missing `app.ini`: re-run `gogs-init`, make sure `.env` has a generated `GOGS_SECURITY_SECRET_KEY`.
@@ -110,7 +112,7 @@ Rollback: revert the tag in compose + restore a backup if needed.
 First deploy (production VM, filled by dev):
 
 - Host: vm001 · `GOGS_HTTP_PORT`: 8550 · Deployed: 2026-09
-- Verified: install wizard + admin ☑ · HTTP clone (public, direct) ☑ · first push ☑
+- Verified: wizard-once admin (INSTALL_LOCK afterwards) ☑ · HTTP clone (public, direct) ☑ · first push ☑
 - Backup→restore drill: **postponed** — test when the first real restore is needed
 
 ## Changelog

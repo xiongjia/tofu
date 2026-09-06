@@ -8,7 +8,7 @@
 # services/<service> first, then run docker compose there — .env lookup and
 # relative bind paths are anchored to the compose dir. Running compose from the
 # repo root with -f would misresolve both.
-# Actions: up down restart logs ps status config init chown shell backup restore update clean
+# Actions: up down restart logs ps status config init check chown shell backup restore update clean
 
 default: list
 
@@ -87,6 +87,20 @@ gogs-init:
     mkdir -p "$GOGS_DATA_DIR/gogs/conf" "$GOGS_DATA_DIR/gogs/data" && \
     if [ ! -f "$GOGS_DATA_DIR/gogs/conf/app.ini" ]; then cp app.ini "$GOGS_DATA_DIR/gogs/conf/app.ini" && echo "seeded app.ini -> $GOGS_DATA_DIR/gogs/conf/"; else echo "app.ini already present in $GOGS_DATA_DIR/gogs/conf/"; fi && \
     echo "data dir ready: $GOGS_DATA_DIR — on Linux VM run: just gogs-chown (then just gogs-up)"
+
+# Read-only config health check: DB path inside /data, DB file present, installed
+# Use before/after down-up, wizard or upgrade so a DB reset cannot go unnoticed.
+gogs-check:
+    @cd services/gogs && { [ -f .env ] || { echo "missing services/gogs/.env — run: just bootstrap"; exit 1; }; } && \
+    set -a && . ./.env && set +a; \
+    ini="$GOGS_DATA_DIR/gogs/conf/app.ini"; \
+    echo "check: $ini"; \
+    { [ -f "$ini" ] || { echo "!! app.ini missing — run: just gogs-init"; exit 0; }; }; \
+    dbpath=$(sed -n '/^\[database\]/,/^\[/p' "$ini" | sed -n 's/^PATH[[:space:]]*=[[:space:]]*//p' | head -n 1); \
+    if [ -n "$dbpath" ] && [ "${dbpath#/data/}" != "$dbpath" ]; then echo "ok: [database] PATH = $dbpath (inside /data)"; else echo "!! [database] PATH = '${dbpath:-<unset>}' — must point under /data, otherwise the DB lives in the container layer and is lost on down/up"; fi; \
+    hostdb="$GOGS_DATA_DIR${dbpath#/data}"; \
+    if [ -n "$dbpath" ]; then { [ -f "$hostdb" ] && echo "ok: DB file present: $hostdb" || echo "!! DB file missing: $hostdb — instance not initialized (wizard/install pending?)"; }; fi; \
+    if grep -q '^INSTALL_LOCK[[:space:]]*=[[:space:]]*true' "$ini"; then echo "ok: INSTALL_LOCK=true (installed)"; else echo "!! INSTALL_LOCK not set — the install wizard will appear (and may rewrite [database] PATH)"; fi
 
 # Runs an alpine helper as root inside docker, so no host sudo is needed.
 # Linux VM only: chown the host data dir to the container user (UID/GID 1000).
