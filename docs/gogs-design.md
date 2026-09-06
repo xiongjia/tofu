@@ -40,8 +40,8 @@ v1 non-goals: external access / TLS, **SSH clone (HTTP only)**, multi-instance H
 - **Port**: 3000 is too common and collides with local dev; 8550 is a high, uncommon port. The container-internal port stays 3000.
 - **Database**: SQLite is the long-term choice — minimal single-machine footprint and backup as a plain copy of the data dir; **no PostgreSQL migration planned**.
 - **Data dir**: bind-mounting a host directory keeps data visible, so backup is a plain tar and migration/troubleshooting is direct; named volumes are opaque.
-- **Config**: Gogs requires a pre-existing `app.ini` with a safe `SECRET_KEY`; on a fresh instance (empty DB) it still shows a one-time install wizard until run once (sets `INSTALL_LOCK`, creates the DB). Committing a template and injecting per-env values/secrets via `${ENV}` keeps secrets off disk.
-- **Admin**: with the installer gone, the first registered user becomes admin (CLI `gogs admin create-user` is the alternative).
+- **Config**: Gogs requires a pre-existing `app.ini` with a safe `SECRET_KEY`. On Gogs 0.14.x the install wizard is the **only** path that creates the DB schema (`GlobalInit` skips DB init while unlocked; a locked empty DB does not self-bootstrap), so a fresh instance runs the wizard **once** with the pre-seeded `[database] PATH` kept; afterwards Gogs writes `INSTALL_LOCK = true` and the wizard never appears again. Secrets are injected via `${ENV}` and never stored on disk; `just gogs-check` guards PATH/DB/INSTALL_LOCK.
+- **Admin**: with `INSTALL_LOCK = true` there is no installer — the first registered user becomes admin (CLI `gogs admin create-user` is the alternative).
 - **Access scope**: minimal v1 surface; TLS/reverse proxy is deferred (see §13).
 - **Backup**: see §7.
 - **Upgrade**: see §8.
@@ -97,7 +97,7 @@ compose references everything via `${VAR}` and forwards `environment` to the con
 
 ### 5.2 App layer: `app.ini` (committed template, no installer)
 
-**Gogs refuses to start without a pre-existing `/data/gogs/conf/app.ini` with a safe `SECRET_KEY`** (it also refuses its unsafe default). A fresh instance with an empty DB shows the **one-time install wizard** until it has been run once (completing it creates the DB at `PATH` and sets `INSTALL_LOCK`). So v1 commits `services/gogs/app.ini` as a **template** holding only `section = ${ENV}` expansions; per-env values and secrets come from the container environment:
+**Gogs refuses to start without a pre-existing `/data/gogs/conf/app.ini` with a safe `SECRET_KEY`** (it also refuses its unsafe default). The template deliberately leaves `INSTALL_LOCK` **unset**: in Gogs 0.14.x the install wizard is the only path that creates the DB schema (locked empty DBs do not self-bootstrap), so the first start shows the wizard once — the pre-seeded `[database] PATH` is kept, completing it writes `INSTALL_LOCK = true` and the wizard never returns. This avoids a wizard rewrite silently moving SQLite into the container layer (the earlier login-loss bug). Per-env values and secrets come from the container environment:
 
 ```ini
 RUN_MODE = prod
@@ -127,7 +127,7 @@ SECRET_KEY = ${GOGS_SECURITY_SECRET_KEY}
 - **app.ini on disk holds no secrets** (expanded from the environment at runtime) → the template is safe to commit.
 - Bootstrap: `just gogs-init` copies the template into `data/gogs/conf/app.ini` when missing and pre-creates `data/gogs/conf` + `data/gogs/data` (avoid a read-only mount that would block the admin UI writing config back); afterwards the data copy is authoritative and git keeps the template in sync. Note Gogs resolves `${ENV}` values and **persists them into the data copy at first start** — later `.env` changes do not propagate; edit the data copy and restart.
 - Editing app.ini requires a **container restart** to take effect.
-- Admin: on a fresh instance, open `http://<host>:8550` and **complete the install wizard** (SQLite, `http://<host>:8550/`, admin account). Afterwards no wizard appears and normal users sign up (or `docker compose exec gogs gogs admin create-user --config /data/gogs/conf/app.ini ...`).
+- Admin: first start shows the **install wizard once** (creates the DB schema); create the admin account there. Afterwards `INSTALL_LOCK = true` and the wizard never appears (or use `docker compose exec gogs gogs admin create-user --admin --config /data/gogs/conf/app.ini ...`).
 
 ### 5.3 Test vs production differences
 
