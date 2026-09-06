@@ -1,0 +1,21 @@
+# Gogs — private git for the homelab.
+# Design: docs/gogs-design.md · Ops manual: services/gogs/README.md
+# Docker commands are run by the dev on the target machine (mac test / Linux VM).
+
+services:
+  gogs:
+    image: gogs/gogs:next-0.14.3 # next-gen image; legacy 0.14.3 tag is deprecated
+    restart: unless-stopped
+    ports:
+      # Bind on all host interfaces (LAN access); container HTTP_ADDR=0.0.0.0:3000.
+      - "0.0.0.0:${GOGS_HTTP_PORT:-8550}:3000"
+    environment:
+      # Expanded by app.ini ${...} at container startup (no secrets on disk).
+      GOGS_DOMAIN: ${GOGS_DOMAIN}
+      GOGS_EXTERNAL_URL: ${GOGS_EXTERNAL_URL}
+      GOGS_SECURITY_SECRET_KEY: ${GOGS_SECURITY_SECRET_KEY}
+    volumes:
+      # Relative to this compose dir -> repo-root data/gogs (see .env.example).
+      - ${GOGS_DATA_DIR:-../../data/gogs}:/data
+    # No healthcheck: the image/docs document none. Rely on restart: unless-stopped
+    # plus `just gogs-ps` / `just gogs-logs` for state (see docs/gogs-design.md).

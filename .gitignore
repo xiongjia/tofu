@@ -1,0 +1,23 @@
+# env files — commit only the example (a plain `.env.*` rule would hide it)
+.env
+.env.*
+!.env.example
+
+# per-service runtime data + backups under one umbrella; backups in data/backups/
+/data/
+
+# local AI collaboration drafts — never committed nor referenced
+*-draft.md
+
+# pi coding agent — commit shared skills/prompts/agents/chains only
+.pi/*
+!.pi/skills/
+!.pi/prompts/
+!.pi/agents/
+!.pi/chains/
+.pi/settings.json
+.pi/npm/
+.pi/sessions/
+
+# macOS
+.DS_Store
